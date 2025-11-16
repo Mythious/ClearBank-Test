@@ -1,11 +1,21 @@
 ﻿using ClearBank.DeveloperTest.Data;
 using ClearBank.DeveloperTest.Types;
 using System.Configuration;
+using ClearBank.DeveloperTest.Business.Repositories.Interfaces;
 
 namespace ClearBank.DeveloperTest.Services
 {
     public class PaymentService : IPaymentService
     {
+        private readonly IAccountRepository _accountRepository;
+        private readonly IBackupAccountRepository _backupAccountRepository;
+
+        public PaymentService(IAccountRepository accountRepository, IBackupAccountRepository backupAccountRepository)
+        {
+            _accountRepository = accountRepository;
+            _backupAccountRepository = backupAccountRepository;
+        }
+        
         public MakePaymentResult MakePayment(MakePaymentRequest request)
         {
             var dataStoreType = ConfigurationManager.AppSettings["DataStoreType"];
@@ -14,13 +24,11 @@ namespace ClearBank.DeveloperTest.Services
 
             if (dataStoreType == "Backup")
             {
-                var accountDataStore = new BackupAccountDataStore();
-                account = accountDataStore.GetAccount(request.DebtorAccountNumber);
+                account = _backupAccountRepository.GetAccount(request.DebtorAccountNumber);
             }
             else
             {
-                var accountDataStore = new AccountDataStore();
-                account = accountDataStore.GetAccount(request.DebtorAccountNumber);
+                account = _accountRepository.GetAccount(request.DebtorAccountNumber);
             }
 
             var result = new MakePaymentResult();
@@ -77,13 +85,11 @@ namespace ClearBank.DeveloperTest.Services
 
                 if (dataStoreType == "Backup")
                 {
-                    var accountDataStore = new BackupAccountDataStore();
-                    accountDataStore.UpdateAccount(account);
+                    _backupAccountRepository.UpdateAccount(account);
                 }
                 else
                 {
-                    var accountDataStore = new AccountDataStore();
-                    accountDataStore.UpdateAccount(account);
+                    _accountRepository.UpdateAccount(account);
                 }
             }
 

@@ -1,8 +1,9 @@
-﻿using ClearBank.DeveloperTest.Types;
+﻿using ClearBank.DeveloperTest.Business.Repositories.Interfaces;
+using ClearBank.DeveloperTest.Types;
 
 namespace ClearBank.DeveloperTest.Data
 {
-    public class BackupAccountDataStore
+    public class BackupAccountDataStore : IBackupAccountRepository
     {
         public Account GetAccount(string accountNumber)
         {

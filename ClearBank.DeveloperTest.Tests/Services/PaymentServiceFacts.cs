@@ -1,6 +1,8 @@
 using System.Configuration;
+using ClearBank.DeveloperTest.Business.Repositories.Interfaces;
 using ClearBank.DeveloperTest.Services;
 using ClearBank.DeveloperTest.Types;
+using Moq;
 using Shouldly;
 using Xunit;
 
@@ -8,6 +10,9 @@ namespace ClearBank.DeveloperTest.Tests.Services;
 
 public class PaymentServiceFacts
 {
+    private readonly Mock<IAccountRepository> _mockAccountRepository = new();
+    private readonly Mock<IBackupAccountRepository> _mockBackupAccountRepository = new();
+    
     public PaymentServiceFacts()
     {
         // Override the data store type for testing purposes. 
@@ -36,6 +41,6 @@ public class PaymentServiceFacts
     
     private IPaymentService CreateService()
     {
-        return new PaymentService();
+        return new PaymentService(_mockAccountRepository.Object, _mockBackupAccountRepository.Object);
     }
 }
