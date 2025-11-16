@@ -1,6 +1,8 @@
 using System;
 using System.Configuration;
 using ClearBank.DeveloperTest.Business.Repositories.Interfaces;
+using ClearBank.DeveloperTest.Business.Validators;
+using ClearBank.DeveloperTest.Business.Validators.Interfaces;
 using ClearBank.DeveloperTest.Services;
 using ClearBank.DeveloperTest.Types;
 using Moq;
@@ -196,7 +198,16 @@ public class PaymentServiceFacts
     
     private IPaymentService CreateService()
     {
+        var validators = new IPaymentValidator[]
+        {
+            new BacsValidator(),
+            new FasterPaymentsValidator(),
+            new ChapsValidator()
+        };
         
-        return new PaymentService(_mockAccountRepository.Object, _mockBackupAccountRepository.Object);
+        return new PaymentService(
+            _mockAccountRepository.Object, 
+            _mockBackupAccountRepository.Object,
+            validators);
     }
 }
