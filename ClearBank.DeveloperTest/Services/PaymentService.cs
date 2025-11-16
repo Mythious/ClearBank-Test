@@ -6,6 +6,13 @@ namespace ClearBank.DeveloperTest.Services
 {
     public class PaymentService : IPaymentService
     {
+        public PaymentService()
+        {
+            // Override the data store type for testing purposes. 
+            // Todo - Remove once the test suite is complete.
+            ConfigurationManager.AppSettings["DataStoreType"] = "Live";
+        }
+        
         public MakePaymentResult MakePayment(MakePaymentRequest request)
         {
             var dataStoreType = ConfigurationManager.AppSettings["DataStoreType"];
