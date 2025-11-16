@@ -1,15 +1,18 @@
 ﻿using System.Collections.Generic;
-using ClearBank.DeveloperTest.Data;
 using ClearBank.DeveloperTest.Types;
-using System.Configuration;
 using System.Linq;
 using ClearBank.DeveloperTest.Business.Repositories.Interfaces;
+using ClearBank.DeveloperTest.Business.Services.Interfaces;
 using ClearBank.DeveloperTest.Business.Validators.Interfaces;
-using ClearBank.DeveloperTest.Data.Configuration;
 using ClearBank.DeveloperTest.Data.Configuration.Interfaces;
 
-namespace ClearBank.DeveloperTest.Services
+namespace ClearBank.DeveloperTest.Business.Services
 {
+    /// <summary>
+    /// Service responsible for processing payments between accounts.
+    /// It validates the payment request using registered validators
+    /// and applies the payment to the account(s) via <see cref="IAccountService"/>.
+    /// </summary>
     public class PaymentService : IPaymentService
     {
         private readonly IAccountRepository _accountRepository;
@@ -49,8 +52,7 @@ namespace ClearBank.DeveloperTest.Services
                 return new MakePaymentResult { Success = false };
             }
             
-           var result = validator.Validate(account, request);
-           
+            var result = validator.Validate(account, request);
             if (result.Success)
             {
                 // If the result is successful, apply the payment to the account.

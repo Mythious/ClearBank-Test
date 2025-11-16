@@ -1,8 +1,14 @@
+using ClearBank.DeveloperTest.Business.Services.Interfaces;
 using ClearBank.DeveloperTest.Data.Configuration.Interfaces;
 using ClearBank.DeveloperTest.Types;
 
-namespace ClearBank.DeveloperTest.Services;
+namespace ClearBank.DeveloperTest.Business.Services;
 
+/// <summary>
+/// Service responsible for applying payments to accounts.
+/// Ensures that the account balance is updated and changes
+/// are persisted to both primary and secondary data stores if available.
+/// </summary>
 public class AccountService : IAccountService
 {
     private readonly IDataStoreSelector _dataStoreSelector;
