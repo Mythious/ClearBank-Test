@@ -1,3 +1,4 @@
+using System.Configuration;
 using ClearBank.DeveloperTest.Services;
 using ClearBank.DeveloperTest.Types;
 using Shouldly;
@@ -7,6 +8,13 @@ namespace ClearBank.DeveloperTest.Tests.Services;
 
 public class PaymentServiceFacts
 {
+    public PaymentServiceFacts()
+    {
+        // Override the data store type for testing purposes. 
+        // Todo - Remove once the test suite is complete.
+        ConfigurationManager.AppSettings["DataStoreType"] = "Live";
+    }
+    
     [Fact]
     public void MakePayment_WhenAccountDoesNotExist_ReturnsFalse()
     {
