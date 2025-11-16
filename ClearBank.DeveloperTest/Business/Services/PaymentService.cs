@@ -16,13 +16,20 @@ namespace ClearBank.DeveloperTest.Services
         private readonly IBackupAccountRepository _backupAccountRepository;
         private readonly IEnumerable<IPaymentValidator> _validators;
         private readonly IDataStoreSelector _dataStoreSelector;
+        private readonly IAccountService _accountService;
 
-        public PaymentService(IAccountRepository accountRepository, IBackupAccountRepository backupAccountRepository, IEnumerable<IPaymentValidator> validators, IDataStoreSelector dataStoreSelector)
+        public PaymentService(
+            IAccountRepository accountRepository, 
+            IBackupAccountRepository backupAccountRepository, 
+            IEnumerable<IPaymentValidator> validators, 
+            IDataStoreSelector dataStoreSelector,
+            IAccountService accountService)
         {
             _accountRepository = accountRepository;
             _backupAccountRepository = backupAccountRepository;
             _validators = validators;
             _dataStoreSelector = dataStoreSelector;
+            _accountService = accountService;
         }
         
         public MakePaymentResult MakePayment(MakePaymentRequest request)
@@ -35,35 +42,19 @@ namespace ClearBank.DeveloperTest.Services
                 return new MakePaymentResult { Success = false };
             }
 
-            var result = new MakePaymentResult();
-
-            result.Success = true;
-            
             // Retrieve the first validator that can validate the payment scheme given only one scheme is allowed.
             var validator = _validators.FirstOrDefault(x => x.CanValidate(request.PaymentScheme));
-            if (validator != null)
-            {
-                // If a valid validator is found, validate the payment.
-                result = validator.Validate(account, request);
-            }
-            else
+            if (validator == null)
             {
                 return new MakePaymentResult { Success = false };
             }
-
+            
+           var result = validator.Validate(account, request);
+           
             if (result.Success)
             {
-                account.Balance -= request.Amount;
-                
-                // Update primary repository
-                _dataStoreSelector.GetPrimary().UpdateAccount(account);
-
-                // Also optionally update backup repository to keep in sync
-                var backup = _dataStoreSelector.GetSecondary();
-                if (backup != null)
-                {
-                    backup.UpdateAccount(account);
-                }
+                // If the result is successful, apply the payment to the account.
+                _accountService.ApplyPayment(account, request.Amount);
             }
 
             return result;

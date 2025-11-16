@@ -18,6 +18,7 @@ public class PaymentServiceFacts
     private readonly Mock<IAccountRepository> _mockAccountRepository = new();
     private readonly Mock<IBackupAccountRepository> _mockBackupAccountRepository = new();
     private readonly Mock<IDataStoreSelector> _mockDataStoreSelector = new();
+    private readonly Mock<IAccountService> _mockAccountService = new();
     
     private readonly DateTime _testPaymentDate = DateTime.FromOADate(45735.0);
     
@@ -75,9 +76,7 @@ public class PaymentServiceFacts
         
         // Separate verification for backup and live accounts.
         _mockDataStoreSelector.Verify(x => x.GetPrimary().GetAccount(It.Is<string>(x => x == request.DebtorAccountNumber)), Times.Once);
-        _mockDataStoreSelector.Verify(x => x.GetPrimary().UpdateAccount(It.Is<Account>(a => a.AccountNumber == accountNumber && a.Balance == initialBalance - paymentAmount)), Times.Once);
-        _mockDataStoreSelector.Verify(x => x.GetSecondary(), Times.Once);
-        _mockBackupAccountRepository.Verify(x => x.UpdateAccount(It.Is<Account>(a => a.AccountNumber == accountNumber && a.Balance == initialBalance - paymentAmount)), Times.Once);
+        _mockAccountService.Verify(x => x.ApplyPayment(It.Is<Account>(a => a.AccountNumber == accountNumber), paymentAmount), Times.Once);
     }
     
     [Fact]
@@ -104,8 +103,7 @@ public class PaymentServiceFacts
         result.Success.ShouldBeTrue();
         
         _mockDataStoreSelector.Verify(x => x.GetPrimary().GetAccount(It.Is<string>(x => x == request.DebtorAccountNumber)), Times.Once);
-        _mockDataStoreSelector.Verify(x => x.GetPrimary().UpdateAccount(It.Is<Account>(a => a.AccountNumber == accountNumber && a.Balance == 400)), Times.Once);
-        _mockDataStoreSelector.Verify(x => x.GetSecondary(), Times.Once);
+        _mockAccountService.Verify(x => x.ApplyPayment(It.Is<Account>(a => a.AccountNumber == accountNumber), request.Amount), Times.Once);
     }
 
     [Theory]
@@ -219,6 +217,7 @@ public class PaymentServiceFacts
             _mockAccountRepository.Object, 
             _mockBackupAccountRepository.Object,
             validators,
-            _mockDataStoreSelector.Object);
+            _mockDataStoreSelector.Object,
+            _mockAccountService.Object);
     }
 }
