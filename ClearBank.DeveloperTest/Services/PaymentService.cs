@@ -5,6 +5,8 @@ using System.Configuration;
 using System.Linq;
 using ClearBank.DeveloperTest.Business.Repositories.Interfaces;
 using ClearBank.DeveloperTest.Business.Validators.Interfaces;
+using ClearBank.DeveloperTest.Data.Configuration;
+using ClearBank.DeveloperTest.Data.Configuration.Interfaces;
 
 namespace ClearBank.DeveloperTest.Services
 {
@@ -13,27 +15,24 @@ namespace ClearBank.DeveloperTest.Services
         private readonly IAccountRepository _accountRepository;
         private readonly IBackupAccountRepository _backupAccountRepository;
         private readonly IEnumerable<IPaymentValidator> _validators;
+        private readonly IDataStoreSelector _dataStoreSelector;
 
-        public PaymentService(IAccountRepository accountRepository, IBackupAccountRepository backupAccountRepository, IEnumerable<IPaymentValidator> validators)
+        public PaymentService(IAccountRepository accountRepository, IBackupAccountRepository backupAccountRepository, IEnumerable<IPaymentValidator> validators, IDataStoreSelector dataStoreSelector)
         {
             _accountRepository = accountRepository;
             _backupAccountRepository = backupAccountRepository;
             _validators = validators;
+            _dataStoreSelector = dataStoreSelector;
         }
         
         public MakePaymentResult MakePayment(MakePaymentRequest request)
         {
-            var dataStoreType = ConfigurationManager.AppSettings["DataStoreType"];
-
-            Account account = null;
-
-            if (dataStoreType == "Backup")
+            // Acquire the account from the primary or backup data store based on the configuration.
+            var account = _dataStoreSelector.GetPrimary().GetAccount(request.DebtorAccountNumber);
+            if (account == null)
             {
-                account = _backupAccountRepository.GetAccount(request.DebtorAccountNumber);
-            }
-            else
-            {
-                account = _accountRepository.GetAccount(request.DebtorAccountNumber);
+                // Account cannot be found in the designated primary or backup data store.
+                return new MakePaymentResult { Success = false };
             }
 
             var result = new MakePaymentResult();
@@ -55,14 +54,15 @@ namespace ClearBank.DeveloperTest.Services
             if (result.Success)
             {
                 account.Balance -= request.Amount;
+                
+                // Update primary repository
+                _dataStoreSelector.GetPrimary().UpdateAccount(account);
 
-                if (dataStoreType == "Backup")
+                // Also optionally update backup repository to keep in sync
+                var backup = _dataStoreSelector.GetSecondary();
+                if (backup != null)
                 {
-                    _backupAccountRepository.UpdateAccount(account);
-                }
-                else
-                {
-                    _accountRepository.UpdateAccount(account);
+                    backup.UpdateAccount(account);
                 }
             }
 

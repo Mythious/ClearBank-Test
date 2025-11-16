@@ -1,8 +1,10 @@
 using System;
 using System.Configuration;
 using ClearBank.DeveloperTest.Business.Repositories.Interfaces;
+using ClearBank.DeveloperTest.Business.Repositories.Interfaces.Base;
 using ClearBank.DeveloperTest.Business.Validators;
 using ClearBank.DeveloperTest.Business.Validators.Interfaces;
+using ClearBank.DeveloperTest.Data.Configuration.Interfaces;
 using ClearBank.DeveloperTest.Services;
 using ClearBank.DeveloperTest.Types;
 using Moq;
@@ -15,15 +17,9 @@ public class PaymentServiceFacts
 {
     private readonly Mock<IAccountRepository> _mockAccountRepository = new();
     private readonly Mock<IBackupAccountRepository> _mockBackupAccountRepository = new();
+    private readonly Mock<IDataStoreSelector> _mockDataStoreSelector = new();
     
     private readonly DateTime _testPaymentDate = DateTime.FromOADate(45735.0);
-    
-    public PaymentServiceFacts()
-    {
-        // Override the data store type for testing purposes. 
-        // Todo - Remove & Refactor once the test suite is complete.
-        ConfigurationManager.AppSettings["DataStoreType"] = "Live";
-    }
     
     [Theory]
     [InlineData(PaymentScheme.Bacs)]
@@ -32,7 +28,7 @@ public class PaymentServiceFacts
     public void MakePayment_WhenAccountDoesNotExist_ReturnsFalse(PaymentScheme paymentScheme)
     {
         // Arrange
-        SeedLiveAccount("TestAccount", 1000, AccountStatus.Live, AllowedPaymentSchemes.FasterPayments | AllowedPaymentSchemes.Bacs | AllowedPaymentSchemes.Chaps);
+        SeedPrimaryAccount("TestAccount", 1000, AccountStatus.Live, AllowedPaymentSchemes.FasterPayments | AllowedPaymentSchemes.Bacs | AllowedPaymentSchemes.Chaps);
         var service = CreateService();
         
         // Act
@@ -59,7 +55,7 @@ public class PaymentServiceFacts
         const string accountNumber = "TestAccount";
         const int initialBalance = 1000;
         const int paymentAmount = 100;
-        SeedLiveAndBackupAccounts(accountNumber, initialBalance, AccountStatus.Live, AllowedPaymentSchemes.Bacs | AllowedPaymentSchemes.FasterPayments | AllowedPaymentSchemes.Chaps);
+        SeedPrimaryAndSecondaryAccounts(accountNumber, initialBalance, AccountStatus.Live, AllowedPaymentSchemes.Bacs | AllowedPaymentSchemes.FasterPayments | AllowedPaymentSchemes.Chaps);
         
         var service = CreateService();
         var request = new MakePaymentRequest
@@ -78,29 +74,20 @@ public class PaymentServiceFacts
         result.Success.ShouldBeTrue();
         
         // Separate verification for backup and live accounts.
-        if (ConfigurationManager.AppSettings["DataStoreType"] == "Backup")
-        {
-            _mockBackupAccountRepository.Verify(x => x.UpdateAccount(It.Is<Account>(a =>
-                a.AccountNumber == accountNumber &&
-                a.Balance == initialBalance - paymentAmount)), Times.Once);
-        }
-        else
-        {
-            _mockAccountRepository.Verify(x => x.UpdateAccount(It.Is<Account>(a =>
-                a.AccountNumber == accountNumber &&
-                a.Balance == initialBalance - paymentAmount)), Times.Once);
-        }
+        _mockDataStoreSelector.Verify(x => x.GetPrimary().GetAccount(It.Is<string>(x => x == request.DebtorAccountNumber)), Times.Once);
+        _mockDataStoreSelector.Verify(x => x.GetPrimary().UpdateAccount(It.Is<Account>(a => a.AccountNumber == accountNumber && a.Balance == initialBalance - paymentAmount)), Times.Once);
+        _mockDataStoreSelector.Verify(x => x.GetSecondary(), Times.Once);
+        _mockBackupAccountRepository.Verify(x => x.UpdateAccount(It.Is<Account>(a => a.AccountNumber == accountNumber && a.Balance == initialBalance - paymentAmount)), Times.Once);
     }
     
     [Fact]
     public void MakePayment_UsesBackupRepository_WhenDataStoreTypeIsBackup()
     {
         // Arrange
-        ConfigurationManager.AppSettings["DataStoreType"] = "Backup";
         const string accountNumber = "BackupAccount";
-        SeedBackupAccount(accountNumber, 500, AccountStatus.Live, AllowedPaymentSchemes.FasterPayments);
+        SeedPrimaryAccount(accountNumber, 500, AccountStatus.Live, AllowedPaymentSchemes.FasterPayments, true);
 
-        var service = CreateService();
+        var service = CreateService(true);
         var request = new MakePaymentRequest
         {
             DebtorAccountNumber = accountNumber,
@@ -115,8 +102,10 @@ public class PaymentServiceFacts
 
         // Assert
         result.Success.ShouldBeTrue();
-        _mockBackupAccountRepository.Verify(x => x.UpdateAccount(It.Is<Account>(a => a.AccountNumber == accountNumber && a.Balance == 400)), Times.Once);
-        _mockAccountRepository.Verify(x => x.UpdateAccount(It.IsAny<Account>()), Times.Never);
+        
+        _mockDataStoreSelector.Verify(x => x.GetPrimary().GetAccount(It.Is<string>(x => x == request.DebtorAccountNumber)), Times.Once);
+        _mockDataStoreSelector.Verify(x => x.GetPrimary().UpdateAccount(It.Is<Account>(a => a.AccountNumber == accountNumber && a.Balance == 400)), Times.Once);
+        _mockDataStoreSelector.Verify(x => x.GetSecondary(), Times.Once);
     }
 
     [Theory]
@@ -131,7 +120,7 @@ public class PaymentServiceFacts
         const int paymentAmount = 100;
         
         // Using 0 Flag to indicate that the account is not allowed to make payments of the specified scheme.
-        SeedLiveAndBackupAccounts(accountNumber, initialBalance, AccountStatus.Live, 0);
+        SeedPrimaryAndSecondaryAccounts(accountNumber, initialBalance, AccountStatus.Live, 0);
         
         var service = CreateService();
         var request = new MakePaymentRequest
@@ -148,55 +137,62 @@ public class PaymentServiceFacts
 
         // Assert
         result.Success.ShouldBeFalse();
-        
-        // Separate verification for backup and live accounts.
-        if (ConfigurationManager.AppSettings["DataStoreType"] == "Backup")
+        _mockDataStoreSelector.Verify(x => x.GetPrimary().GetAccount(It.Is<string>(x => x == request.DebtorAccountNumber)), Times.Once);
+    }
+    
+    private void SeedPrimaryAndSecondaryAccounts(string accountNumber, decimal balance, AccountStatus status, AllowedPaymentSchemes allowedPaymentSchemes, bool isBackup = false)
+    {
+        SeedPrimaryAccount(accountNumber, balance, status, allowedPaymentSchemes, isBackup);
+        SeedSecondaryAccount(accountNumber, balance, status, allowedPaymentSchemes, isBackup);
+    }
+
+    private void SeedPrimaryAccount(string accountNumber, decimal balance, AccountStatus status,
+        AllowedPaymentSchemes allowedPaymentSchemes, bool isBackup = false)
+    {
+        if (!isBackup)
         {
-            _mockBackupAccountRepository.Verify(x => x.UpdateAccount(It.Is<Account>(a =>
-                a.AccountNumber == accountNumber &&
-                a.Balance == initialBalance - paymentAmount)), Times.Never);
+            _mockAccountRepository
+                .Setup(x => x.GetAccount(It.Is<string>(s => s == accountNumber)))
+                .Returns(new Account
+                {
+                    AccountNumber = accountNumber,
+                    Balance = balance,
+                    Status = status,
+                    AllowedPaymentSchemes = allowedPaymentSchemes
+                });
         }
         else
         {
-            _mockAccountRepository.Verify(x => x.UpdateAccount(It.Is<Account>(a =>
-                a.AccountNumber == accountNumber &&
-                a.Balance == initialBalance - paymentAmount)), Times.Never);
+            _mockBackupAccountRepository
+                .Setup(x => x.GetAccount(It.Is<string>(s => s == accountNumber)))
+                .Returns(new Account
+                {
+                    AccountNumber = accountNumber,
+                    Balance = balance,
+                    Status = status,
+                    AllowedPaymentSchemes = allowedPaymentSchemes
+                });
+        }
+    }
+
+    private void SeedSecondaryAccount(string accountNumber, decimal balance, AccountStatus status,
+        AllowedPaymentSchemes allowedPaymentSchemes, bool isBackup = false)
+    {
+        if (!isBackup)
+        {
+            _mockBackupAccountRepository
+                .Setup(x => x.GetAccount(It.Is<string>(s => s == accountNumber)))
+                .Returns(new Account
+                {
+                    AccountNumber = accountNumber,
+                    Balance = balance,
+                    Status = status,
+                    AllowedPaymentSchemes = allowedPaymentSchemes
+                });
         }
     }
     
-    private void SeedLiveAccount(string accountNumber, decimal balance, AccountStatus status, AllowedPaymentSchemes allowedPaymentSchemes)
-    {
-        _mockAccountRepository
-            .Setup(x => x.GetAccount(It.Is<string>(s => s == accountNumber)))
-            .Returns(new Account
-            {
-                AccountNumber = accountNumber,
-                Balance = balance,
-                Status = status,
-                AllowedPaymentSchemes = allowedPaymentSchemes
-            });
-    }
-
-    private void SeedBackupAccount(string accountNumber, decimal balance, AccountStatus status, AllowedPaymentSchemes allowedPaymentSchemes)
-    {
-        _mockBackupAccountRepository
-            .Setup(x => x.GetAccount(It.Is<string>(s => s == accountNumber)))
-            .Returns(new Account
-            {
-                AccountNumber = accountNumber,
-                Balance = balance,
-                Status = status,
-                AllowedPaymentSchemes = allowedPaymentSchemes
-            });
-    }
-
-    private void SeedLiveAndBackupAccounts(string accountNumber, decimal balance, AccountStatus status, AllowedPaymentSchemes allowedPaymentSchemes)
-    {
-        SeedLiveAccount(accountNumber, balance, status, allowedPaymentSchemes);
-        SeedBackupAccount(accountNumber, balance, status, allowedPaymentSchemes);
-    }
-    
-    private IPaymentService CreateService()
+    private IPaymentService CreateService(bool useBackupDataStore = false)
     {
         var validators = new IPaymentValidator[]
         {
@@ -204,10 +200,25 @@ public class PaymentServiceFacts
             new FasterPaymentsValidator(),
             new ChapsValidator()
         };
+
+        if (useBackupDataStore)
+        {
+            // Replicates if the main data store is backup.
+            _mockDataStoreSelector.Setup(s => s.GetPrimary()).Returns(_mockBackupAccountRepository.Object);
+            _mockDataStoreSelector.Setup(s => s.GetSecondary()).Returns((IBaseAccountRepository)null);
+        }
+        else
+        {
+            // Replicates if the main data store is live.
+            _mockDataStoreSelector.Setup(s => s.GetPrimary()).Returns(_mockAccountRepository.Object);
+            _mockDataStoreSelector.Setup(s => s.GetSecondary()).Returns(_mockBackupAccountRepository.Object);
+        }
+
         
         return new PaymentService(
             _mockAccountRepository.Object, 
             _mockBackupAccountRepository.Object,
-            validators);
+            validators,
+            _mockDataStoreSelector.Object);
     }
 }
